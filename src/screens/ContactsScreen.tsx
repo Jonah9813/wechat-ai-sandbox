@@ -97,7 +97,7 @@ export function ContactsScreen() {
         ))}
       </div>
       <div className="contact-index" aria-hidden="true">
-        {['↑', ...groups.map(([initial]) => initial)].map((letter) => (
+        {['↑', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), '#'].map((letter) => (
           <span key={letter}>{letter}</span>
         ))}
       </div>
