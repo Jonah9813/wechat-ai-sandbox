@@ -1,0 +1,136 @@
+name: Android APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      VITE_GITHUB_REPO: ${{ github.repository }}
+      # 构建只需要 Vite，不需要 Playwright 的浏览器
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      APP_VERSION_NAME: 0.0.0
+      APP_VERSION_CODE: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0"
+
+      - name: Resolve version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG#v}"
+          else
+            BASE_VERSION="$(node -p "require('./package.json').version")"
+            VERSION="${BASE_VERSION}-build.${GITHUB_RUN_NUMBER}"
+          fi
+          BASE="${VERSION%%-*}"
+          MAJOR="${BASE%%.*}"
+          REST="${BASE#*.}"
+          MINOR="${REST%%.*}"
+          PATCH="${REST#*.}"
+          [[ "$PATCH" =~ ^[0-9]+$ ]] || PATCH=0
+          CODE=$((10#$MAJOR * 10000 + 10#$MINOR * 100 + 10#$PATCH))
+          echo "APP_VERSION_NAME=${VERSION}" >> "$GITHUB_ENV"
+          echo "APP_VERSION_CODE=${CODE}" >> "$GITHUB_ENV"
+          echo "版本：${VERSION} (${CODE})"
+
+      - name: Check signing secrets for tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          if [[ -z "${KEYSTORE_BASE64}" || -z "${ANDROID_KEYSTORE_PASSWORD}" || -z "${ANDROID_KEY_ALIAS}" ]]; then
+            echo "::error::发布正式版必须在仓库 Secrets 里配置 ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD。详见 docs/发布与更新.md"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Decode signing keystore
+        if: env.KEYSTORE_BASE64 != ''
+        shell: bash
+        run: |
+          mkdir -p android/app
+          printf '%s' "${KEYSTORE_BASE64}" | base64 -d > android/app/release.keystore
+
+      - name: Build APK
+        shell: bash
+        env:
+          KEYSTORE_FILE: ${{ github.workspace }}/android/app/release.keystore
+        run: |
+          cd android
+          chmod +x gradlew
+          if [[ -n "${KEYSTORE_BASE64}" ]]; then
+            ./gradlew assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk "../wechat-sandbox-${APP_VERSION_NAME}.apk"
+          else
+            ./gradlew assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk "../wechat-sandbox-debug-${APP_VERSION_NAME}.apk"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wechat-sandbox-${{ env.APP_VERSION_NAME }}
+          path: wechat-sandbox-*.apk
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: wechat-sandbox-*.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Android 安装包见下方 Assets。
+
+            安装方法：下载 `.apk` → 允许「安装未知应用」→ 安装。
+            已安装旧版本的用户可在 App 内「设置 → 关于微信 → 检查更新」直接升级。
+
+            本次构建版本：${{ env.APP_VERSION_NAME }}（${{ env.APP_VERSION_CODE }}）

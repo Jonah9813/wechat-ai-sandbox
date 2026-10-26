@@ -1,0 +1,40 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env
+.env.*
+
+# 本地运行数据
+.browser-data/
+events/
+screenshots/
+.screenshots/
+vibe_images/
+images/
+wechat-master/
+手机工程日志.txt
+安装依赖日志.txt
+android-partial-backup/
+*.bak
+
+# 签名文件绝不能提交
+android/keystore/
+*.jks
+*.keystore
+*.p12
+*.pem
+release-keystore*
+android/app/release.keystore
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+
+# 系统
+.DS_Store
+Thumbs.db
