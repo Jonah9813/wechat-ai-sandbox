@@ -48,7 +48,7 @@ export function AboutScreen() {
           <div className="about-logo">
             <MessageCircle size={42} strokeWidth={1.6} />
           </div>
-          <div className="about-name">微信沙盒</div>
+          <div className="about-name">微信</div>
           <div className="about-version">
             {currentVersion ? `版本 ${currentVersion}${currentBuild ? `（${currentBuild}）` : ''}` : '开发版'}
           </div>

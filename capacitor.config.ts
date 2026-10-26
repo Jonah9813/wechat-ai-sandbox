@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'com.lucky.wechatsandbox',
-  appName: '微信沙盒',
+  appName: '微信',
   webDir: 'dist',
   backgroundColor: '#111111',
   android: {

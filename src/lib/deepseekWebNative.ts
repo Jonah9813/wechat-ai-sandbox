@@ -15,7 +15,7 @@ type EvalResult = { value: string }
 
 type DeepSeekWebPlugin = {
   status(): Promise<StatusResult>
-  load(options: { url: string }): Promise<LoadResult>
+  loadUrl(options: { url: string }): Promise<LoadResult>
   evalPage(options: { script: string }): Promise<EvalResult>
   currentUrl(): Promise<{ url: string }>
   openLogin(): Promise<{ loggedIn: boolean }>
@@ -158,7 +158,7 @@ async function ensureLoaded(url: string): Promise<string> {
     await loading
     if (loadedUrl && normalizeUrl(loadedUrl) === target) return loadedUrl
   }
-  const task = DeepSeekWeb.load({ url })
+  const task = DeepSeekWeb.loadUrl({ url })
     .then((result: LoadResult) => {
       loadedUrl = result.url || url
       return loadedUrl

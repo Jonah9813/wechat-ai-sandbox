@@ -266,8 +266,8 @@ img {
 .nav {
   position: relative;
   z-index: 20;
-  flex: 0 0 48px;
-  height: 48px;
+  flex: 0 0 56px;
+  height: 56px;
   display: flex;
   align-items: center;
   background: var(--wx-nav);
@@ -693,15 +693,15 @@ img {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 22px;
-  padding: 16px;
+  gap: 14px;
+  padding: 12px 16px;
   background: var(--wx-cell);
 }
 
 .chat-row::after {
   content: "";
   position: absolute;
-  left: 75px;
+  left: 78px;
   right: 0;
   bottom: 0;
   height: 0.5px;
@@ -3511,13 +3511,7 @@ img {
 
 /* ---------------- 手机 App（Capacitor） ---------------- */
 
-/* 隐藏了系统状态栏，界面自带状态栏；刘海/挖孔高度用安全区补上 */
-html.native .statusbar {
-  box-sizing: border-box;
-  flex-basis: calc(30px + env(safe-area-inset-top, 0px));
-  height: calc(30px + env(safe-area-inset-top, 0px));
-  padding-top: env(safe-area-inset-top, 0px);
-}
+/* 手机 App 使用系统状态栏，页面里不再渲染模拟状态栏 */
 
 /* ---------------- 关于 / 自动更新 ---------------- */
 

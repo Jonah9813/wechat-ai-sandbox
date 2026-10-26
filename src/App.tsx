@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Capacitor } from '@capacitor/core'
 import { StatusBar } from './components/StatusBar'
 import { Toast } from './components/Toast'
 import { UpdateDialog } from './components/UpdateDialog'
@@ -30,6 +31,7 @@ import { useApp } from './store'
 
 export default function App() {
   const location = useLocation()
+  const isNative = Capacitor.isNativePlatform()
   const statusTheme =
     location.pathname === '/pay'
       ? 'green'
@@ -58,7 +60,8 @@ export default function App() {
     <div className="stage">
       <div className="device">
         <div className="screen">
-          <StatusBar theme={statusTheme} />
+          {/* 手机 App 用系统状态栏；只有电脑预览才画模拟状态栏 */}
+          {!isNative ? <StatusBar theme={statusTheme} /> : null}
           <div className="viewport">
             <Routes>
               <Route path="/" element={<Navigate to="/chats" replace />} />

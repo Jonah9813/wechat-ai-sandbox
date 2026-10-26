@@ -105,7 +105,7 @@ export function ChatsScreen() {
               onClick={() => navigate(`/chat/${friend.id}`)}
             >
               <div className="chat-avatar">
-                <Avatar src={friend.avatar} name={friend.name} size={40} />
+                <Avatar src={friend.avatar} name={friend.name} size={48} />
                 {unread > 0 ? <span className="badge">{unread > 99 ? '99+' : unread}</span> : null}
               </div>
               <div className="chat-body">

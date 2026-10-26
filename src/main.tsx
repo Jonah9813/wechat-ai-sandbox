@@ -3,19 +3,25 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
-import { StatusBar } from '@capacitor/status-bar'
+import { StatusBar, Style } from '@capacitor/status-bar'
 import App from './App'
 import { useUpdater } from './lib/updater'
 import './styles.css'
 
-// 手机 App：隐藏系统状态栏（界面里自带状态栏）、接管返回键、标记原生环境
+// 手机 App：使用系统状态栏（不再画模拟栏），接管返回键
 if (Capacitor.isNativePlatform()) {
   document.documentElement.classList.add('native')
 
-  void StatusBar.hide().catch(() => undefined)
-  // 从登录窗口/安装器/键盘回来时，系统状态栏可能又冒出来，重新隐藏
+  const applySystemBars = () => {
+    // 内容排在状态栏下方，避免刘海/挖孔压住标题；深色底 + 浅色图标
+    void StatusBar.setOverlaysWebView({ overlay: false }).catch(() => undefined)
+    void StatusBar.setStyle({ style: Style.Dark }).catch(() => undefined)
+    void StatusBar.setBackgroundColor({ color: '#111111' }).catch(() => undefined)
+  }
+  applySystemBars()
+  // 从登录窗口/安装器/键盘回来时，重新确认状态栏样式
   void CapApp.addListener('appStateChange', ({ isActive }: { isActive: boolean }) => {
-    if (isActive) void StatusBar.hide().catch(() => undefined)
+    if (isActive) applySystemBars()
   })
 
   void CapApp.addListener('backButton', ({ canGoBack }: { canGoBack: boolean }) => {
