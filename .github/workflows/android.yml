@@ -109,12 +109,11 @@ jobs:
 
       - name: Build APK
         shell: bash
-        env:
-          KEYSTORE_FILE: ${{ github.workspace }}/android/app/release.keystore
         run: |
           cd android
           chmod +x gradlew
           if [[ -n "${KEYSTORE_BASE64}" ]]; then
+            export KEYSTORE_FILE="$GITHUB_WORKSPACE/android/app/release.keystore"
             ./gradlew assembleRelease --no-daemon
             cp app/build/outputs/apk/release/app-release.apk "../wechat-sandbox-${APP_VERSION_NAME}.apk"
           else

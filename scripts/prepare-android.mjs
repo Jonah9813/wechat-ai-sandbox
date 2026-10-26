@@ -111,7 +111,7 @@ if (!gradle.includes('APP_VERSION_CODE')) {
   if (/versionCode\s+1\b/.test(gradle)) {
     gradle = gradle.replace(
       /versionCode\s+1\b/,
-      'versionCode (System.getenv("APP_VERSION_CODE") ?: "1").toInteger()',
+      'versionCode = System.getenv("APP_VERSION_CODE")?.toInteger() ?: 1',
     )
   } else {
     console.warn('[注意] 没找到 versionCode 1，请手动把 versionCode 改成读 APP_VERSION_CODE')
@@ -119,7 +119,7 @@ if (!gradle.includes('APP_VERSION_CODE')) {
   if (/versionName\s+"1\.0"/.test(gradle)) {
     gradle = gradle.replace(
       /versionName\s+"1\.0"/,
-      'versionName (System.getenv("APP_VERSION_NAME") ?: "0.1.0")',
+      'versionName = System.getenv("APP_VERSION_NAME") ?: "0.1.0"',
     )
   } else {
     console.warn('[注意] 没找到 versionName "1.0"，请手动把 versionName 改成读 APP_VERSION_NAME')
