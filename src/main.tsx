@@ -13,8 +13,7 @@ if (Capacitor.isNativePlatform()) {
   document.documentElement.classList.add('native')
 
   const applySystemBars = () => {
-    // 内容排在状态栏下方，避免刘海/挖孔压住标题；深色底 + 浅色图标
-    void StatusBar.setOverlaysWebView({ overlay: false }).catch(() => undefined)
+    // Capacitor 8 默认用 CSS 安全区变量处理系统栏；深色底 + 浅色图标
     void StatusBar.setStyle({ style: Style.Dark }).catch(() => undefined)
     void StatusBar.setBackgroundColor({ color: '#111111' }).catch(() => undefined)
   }

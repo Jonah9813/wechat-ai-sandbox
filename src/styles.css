@@ -3511,7 +3511,13 @@ img {
 
 /* ---------------- 手机 App（Capacitor） ---------------- */
 
-/* 手机 App 使用系统状态栏，页面里不再渲染模拟状态栏 */
+/* 手机 App 使用系统状态栏，页面里不再渲染模拟状态栏。
+   Capacitor 8 会把系统栏高度写成 --safe-area-inset-*，这里把内容整体让到状态栏下方。 */
+html.native .screen {
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  background: #111111;
+}
 
 /* ---------------- 关于 / 自动更新 ---------------- */
 

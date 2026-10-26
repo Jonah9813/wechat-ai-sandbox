@@ -346,17 +346,18 @@ async function inputValue(): Promise<string> {
   })()`)
 }
 
-async function submit() {
+async function submit(): Promise<boolean> {
   await pressEnter()
   for (let i = 0; i < 6; i++) {
     await wait(250)
-    if (!(await inputValue())) return
+    if (!(await inputValue())) return true
   }
   await clickSendButton()
   await wait(900)
+  return !(await inputValue())
 }
 
-async function waitForReply(before: { count: number; last: string }, timeoutMs = 120_000): Promise<string> {
+async function waitForReply(before: { count: number; last: string }, timeoutMs = 90_000): Promise<string> {
   const started = Date.now()
   let sawNew = false
   let last = ''
@@ -371,6 +372,9 @@ async function waitForReply(before: { count: number; last: string }, timeoutMs =
     if (challenge) {
       throw new Error(`网页端出现「${challenge}」，已停止发送。请在登录窗口里手动处理后再试`)
     }
+    const failure = /服务器繁忙|网络异常|网络错误|发送失败|请稍后再试|请求过于频繁|内容过长|对话不存在/.exec(`${page.body || ''}
+${page.dialogs || ''}`)
+    if (failure) throw new Error(`网页端提示「${failure[0]}」，请稍后再试`)
     if (!sawNew) {
       if (page.count > before.count || (page.last && page.last !== before.last)) {
         sawNew = true
@@ -419,73 +423,108 @@ export async function askNativeWeb({ text, system, threadKey = 'default' }: WebA
     recentRequests.push(now)
 
     const threads = readThreads()
-    const known = threads[threadKey]
-    let firstMessage = false
+    const original = threads[threadKey]
+    // 网页端输入框对超长设定不友好，压缩到 1200 字以内，降低发送失败概率
+    const systemText = String(system || '').trim().slice(0, 1200)
 
-    let target = CHAT_URL
-    if (known && isThreadUrl(known.url)) target = known.url
-    await ensureLoaded(target)
-    // 首页可能被上一次会话占着；重新按目标地址确认一次
-    const landed = await DeepSeekWeb.currentUrl().catch(() => ({ url: target }))
-    if (landed.url) loadedUrl = landed.url
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const known = attempt === 0 ? original : undefined
+      let sent = false
+      try {
+        const target = known && isThreadUrl(known.url) ? known.url : CHAT_URL
+        await ensureLoaded(target)
+        // 首页可能被上一次会话占着；重新按目标地址确认一次
+        const landed = await DeepSeekWeb.currentUrl().catch(() => ({ url: target }))
+        if (landed.url) loadedUrl = landed.url
 
-    let page = await waitForPageReady()
-    if (/sign_?in|\/login/i.test(page.url) || !page.hasInput) {
-      throw new Error('DeepSeek 网页端未登录：点「登录 DeepSeek」，登录后重试')
-    }
-    const challenge = challengeOf(page)
-    if (challenge) {
-      throw new Error(`网页端出现「${challenge}」，已停止发送。请在登录窗口里手动完成验证，然后再试`)
-    }
+        let page = await waitForPageReady()
+        if (/sign_?in|\/login/i.test(page.url)) {
+          throw new Error('DeepSeek 网页端未登录：点「登录 DeepSeek」，登录后重试')
+        }
+        if (!page.hasInput) {
+          // 旧会话失效时不要直接报错，清掉记录后从首页重开一次
+          if (known) {
+            delete threads[threadKey]
+            writeThreads(threads)
+            continue
+          }
+          throw new Error('网页端没有找到输入框（页面可能还没加载完，或结构已变化）')
+        }
+        const challenge = challengeOf(page)
+        if (challenge) {
+          throw new Error(`网页端出现「${challenge}」，已停止发送。请在登录窗口里手动完成验证，然后再试`)
+        }
 
-    if (known && !isThreadUrl(page.url)) firstMessage = true
-    if (!known) {
-      firstMessage = true
-      // 从首页开新会话，避免串到别人的对话里
-      if (normalizeUrl(page.url) !== normalizeUrl(CHAT_URL)) {
-        await ensureLoaded(CHAT_URL)
-        page = await waitForPageReady()
-      }
-    }
+        let firstMessage = false
+        if (!known) {
+          firstMessage = true
+          // 从首页开新会话，避免串到别人的对话里
+          if (normalizeUrl(page.url) !== normalizeUrl(CHAT_URL)) {
+            await ensureLoaded(CHAT_URL)
+            page = await waitForPageReady()
+          }
+        } else if (!isThreadUrl(page.url)) {
+          firstMessage = true
+        }
 
-    await wait(randomBetween(500, 1400))
+        await wait(randomBetween(500, 1400))
 
-    const systemText = String(system || '').trim()
-    const resumeEntry = isThreadUrl(page.url) ? known : undefined
-    const needSeed = Boolean(systemText) && (firstMessage || shouldReseed(resumeEntry, threadKey))
-    const prompt = needSeed ? composePrompt(systemText, cleanText, firstMessage) : cleanText
+        const resumeEntry = isThreadUrl(page.url) ? known : undefined
+        const needSeed = Boolean(systemText) && (firstMessage || shouldReseed(resumeEntry, threadKey))
+        const prompt = needSeed ? composePrompt(systemText, cleanText, firstMessage) : cleanText
 
-    const before = { count: page.count, last: page.last }
-    await typeText(prompt)
-    await wait(randomBetween(500, 1200))
-    await submit()
+        const before = { count: page.count, last: page.last }
+        await typeText(prompt)
+        await wait(randomBetween(500, 1200))
+        sent = await submit()
+        if (!sent) {
+          if (known) {
+            delete threads[threadKey]
+            writeThreads(threads)
+            continue
+          }
+          throw new Error('网页端没有把消息发出去，请稍后再试')
+        }
 
-    let reply: string
-    try {
-      reply = await waitForReply(before)
-    } catch (error) {
-      failStreak += 1
-      if (failStreak >= MAX_FAIL_STREAK) {
-        blockedUntil = Date.now() + FAIL_COOLDOWN_MS
+        const reply = await waitForReply(before)
         failStreak = 0
-      }
-      throw error
-    }
-    failStreak = 0
 
-    const after = await DeepSeekWeb.currentUrl().catch(() => ({ url: loadedUrl }))
-    if (isThreadUrl(after.url)) {
-      const normalized = `${new URL(after.url).origin}${new URL(after.url).pathname}`
-      const prev = threads[threadKey]
-      const sameThread = Boolean(prev && normalizeUrl(prev.url) === normalizeUrl(normalized))
-      threads[threadKey] = {
-        url: normalized,
-        sent: needSeed ? 0 : sameThread ? prev.sent + 1 : 0,
-        seededAt: needSeed ? Date.now() : sameThread && prev.seededAt ? prev.seededAt : Date.now(),
+        const after = await DeepSeekWeb.currentUrl().catch(() => ({ url: loadedUrl }))
+        if (isThreadUrl(after.url)) {
+          const normalized = `${new URL(after.url).origin}${new URL(after.url).pathname}`
+          const prev = threads[threadKey]
+          const sameThread = Boolean(prev && normalizeUrl(prev.url) === normalizeUrl(normalized))
+          threads[threadKey] = {
+            url: normalized,
+            sent: needSeed ? 0 : sameThread ? prev.sent + 1 : 0,
+            seededAt: needSeed ? Date.now() : sameThread && prev.seededAt ? prev.seededAt : Date.now(),
+          }
+          writeThreads(threads)
+        }
+        return reply
+      } catch (error) {
+        const message = error instanceof Error ? error.message : ''
+        // 只有「还没发出去」才换新会话重试；已经发出去但等回复超时不重试，避免重复发送
+        const retryable = Boolean(known) && !sent && !/未登录|验证|暂停|太多|过于频繁/.test(message)
+        if (retryable) {
+          delete threads[threadKey]
+          writeThreads(threads)
+          await wait(1200)
+          continue
+        }
+        if (known) {
+          delete threads[threadKey]
+          writeThreads(threads)
+        }
+        failStreak += 1
+        if (failStreak >= MAX_FAIL_STREAK) {
+          blockedUntil = Date.now() + FAIL_COOLDOWN_MS
+          failStreak = 0
+        }
+        throw error
       }
-      writeThreads(threads)
     }
-    return reply
+    throw new Error('网页端暂时没有回复，请稍后再试')
   })
 }
 

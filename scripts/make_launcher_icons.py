@@ -15,8 +15,8 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "android" / "app" / "src" / "main" / "res"
 
-GREEN = (7, 193, 96, 255)
-WHITE = (255, 255, 255, 255)
+SOURCE = ROOT / "scripts" / "assets" / "wechat-icon.jpg"
+GREEN = (46, 194, 0, 255)
 
 DENSITIES = {
     "mdpi": 1.0,
@@ -27,49 +27,30 @@ DENSITIES = {
 }
 
 
-def draw_master(size: int, background: bool, content_scale: float = 1.0) -> Image.Image:
-    """画一张 1024 逻辑尺寸的图，再缩放到目标尺寸。"""
-    scale = 4
-    canvas = 1024 * scale
-    img = Image.new("RGBA", (canvas, canvas), GREEN if background else (0, 0, 0, 0))
+def load_master() -> Image.Image:
+    """用用户提供的微信图标原图做母版：去水印、补满四角，得到全绿方块。"""
+    if not SOURCE.exists():
+        raise SystemExit(f"找不到图标原图：{SOURCE}")
+
+    img = Image.open(SOURCE).convert("RGB")
+    width, height = img.size
     draw = ImageDraw.Draw(img)
 
-    def s(value: float) -> float:
-        # 以 1024 为基准，先把内容缩到 content_scale，再居中
-        return value * scale * content_scale + canvas * (1 - content_scale) / 2
+    # 原图底部有网站水印；最低的白色气泡约在 87% 高度，从 90% 往下直接铺绿
+    draw.rectangle([0, int(height * 0.90), width, height], fill=GREEN[:3])
 
-    # 大气泡
-    big = [s(168), s(210), s(742), s(660)]
-    draw.rounded_rectangle(big, radius=s(150), fill=WHITE)
-    draw.polygon(
-        [(s(215), s(600)), (s(215), s(742)), (s(365), s(645))],
-        fill=WHITE,
-    )
-    # 大气泡的两只眼睛（绿色圆点）
-    for eye_x in (330, 500):
-        draw.ellipse(
-            [s(eye_x - 32), s(360 - 32), s(eye_x + 32), s(360 + 32)],
-            fill=GREEN,
-        )
+    # 原图是圆角绿方块、四角为白；从四角泛洪填绿，保留中间的白色气泡
+    for corner in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)):
+        ImageDraw.floodfill(img, corner, GREEN[:3], thresh=48)
 
-    # 小气泡：先描一圈绿色，和大气泡区分开
-    small = [s(512), s(470), s(936), s(800)]
-    draw.rounded_rectangle(small, radius=s(130), fill=GREEN, outline=GREEN, width=int(s(26)))
-    inner = [s(538), s(496), s(910), s(774)]
-    draw.rounded_rectangle(inner, radius=s(108), fill=WHITE)
-    draw.polygon(
-        [(s(772), s(742)), (s(772), s(862)), (s(662), s(772))],
-        fill=WHITE,
-    )
-    # 小气泡的两只眼睛
-    for eye_x in (672, 812):
-        draw.ellipse(
-            [s(eye_x - 26), s(600 - 26), s(eye_x + 26), s(600 + 26)],
-            fill=GREEN,
-        )
+    # 原图边缘有一圈抗锯齿白线，直接压一圈绿盖掉
+    draw.rectangle([0, 0, width - 1, height - 1], outline=GREEN[:3], width=4)
 
-    img = img.resize((size, size), Image.LANCZOS)
-    return img
+    return img.convert("RGBA")
+
+
+def resized_master(size: int) -> Image.Image:
+    return load_master().resize((size, size), Image.LANCZOS)
 
 
 def rounded(img: Image.Image) -> Image.Image:
@@ -110,7 +91,7 @@ SPLASH_SIZES = {
 def make_splash(width: int, height: int) -> Image.Image:
     image = Image.new("RGBA", (width, height), (17, 17, 17, 255))
     icon_size = max(72, int(min(width, height) * 0.3))
-    icon = rounded_square(draw_master(icon_size, background=True))
+    icon = rounded_square(resized_master(icon_size), radius_ratio=0.12)
     image.paste(icon, ((width - icon_size) // 2, (height - icon_size) // 2), icon)
     return image
 
@@ -124,13 +105,15 @@ def main() -> None:
         folder.mkdir(parents=True, exist_ok=True)
 
         legacy_size = int(48 * factor)
-        legacy = draw_master(legacy_size, background=True)
+        legacy = rounded_square(resized_master(legacy_size), radius_ratio=0.12)
         legacy.save(folder / "ic_launcher.png")
         rounded(legacy).save(folder / "ic_launcher_round.png")
 
-        # 自适应图标前景：108dp，内容放在中间约 60% 的安全区
+        # 自适应图标前景：108dp，原图缩到中间约 68% 的安全区
         fg_size = int(108 * factor)
-        foreground = draw_master(fg_size, background=False, content_scale=0.7)
+        foreground = Image.new("RGBA", (fg_size, fg_size), GREEN)
+        inner = resized_master(int(fg_size * 0.68))
+        foreground.paste(inner, ((fg_size - inner.width) // 2, (fg_size - inner.height) // 2), inner)
         foreground.save(folder / "ic_launcher_foreground.png")
 
     # 自适应图标配置 + 背景色
@@ -150,7 +133,7 @@ def main() -> None:
     (values / "ic_launcher_background.xml").write_text(
         """<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#07C160</color>
+    <color name="ic_launcher_background">#2EC100</color>
 </resources>
 """,
         encoding="utf-8",
@@ -166,7 +149,7 @@ def main() -> None:
     # 供网页里的「关于微信」页复用同一枚图标
     public = ROOT / "public"
     public.mkdir(exist_ok=True)
-    draw_master(512, background=True).save(public / "app-icon.png")
+    rounded_square(resized_master(512), radius_ratio=0.12).save(public / "app-icon.png")
 
     print(f"图标和启动图已生成：{RES}")
 
