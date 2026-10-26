@@ -4,6 +4,7 @@ dist-ssr/
 *.local
 .env
 .env.*
+tsconfig.tsbuildinfo
 
 # 本地运行数据
 .browser-data/
