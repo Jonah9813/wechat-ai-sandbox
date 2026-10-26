@@ -147,6 +147,20 @@ if (!gradle.includes('signingConfigs')) {
   console.log('已加 signingConfigs')
 }
 
+if (!gradle.includes('compileOptions')) {
+  const buildTypesIndex = gradle.indexOf('buildTypes {')
+  if (buildTypesIndex < 0) fail('build.gradle 里找不到 buildTypes，无法加 Java 版本配置。')
+  const javaOptions = `
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+`
+  gradle = gradle.slice(0, buildTypesIndex) + javaOptions + gradle.slice(buildTypesIndex)
+  console.log('已设置 Java 17 编译选项')
+}
+
 const buildTypesAt = gradle.indexOf('buildTypes {')
 const releaseAt = gradle.indexOf('release {', buildTypesAt)
 if (releaseAt >= 0) {

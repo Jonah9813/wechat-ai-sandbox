@@ -153,6 +153,7 @@ public class AppUpdaterPlugin extends Plugin {
     }
 
     private void openUnknownSourcesSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         try {
             Intent intent = new Intent(
                     Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
