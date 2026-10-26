@@ -3536,9 +3536,14 @@ img {
   width: 76px;
   height: 76px;
   border-radius: 18px;
-  background: linear-gradient(160deg, #3fcf6a, #16953f);
-  color: #fff;
+  overflow: hidden;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.about-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .about-name {

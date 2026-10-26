@@ -1,4 +1,4 @@
-import { MessageCircle, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { useEffect } from 'react'
 import { Cell, CellGroup } from '../components/Cell'
 import { NavBar } from '../components/NavBar'
@@ -46,7 +46,7 @@ export function AboutScreen() {
       <div className="scroll settings-scroll">
         <section className="about-hero">
           <div className="about-logo">
-            <MessageCircle size={42} strokeWidth={1.6} />
+            <img src="/app-icon.png" alt="微信" />
           </div>
           <div className="about-name">微信</div>
           <div className="about-version">

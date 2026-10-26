@@ -42,9 +42,15 @@ def draw_master(size: int, background: bool, content_scale: float = 1.0) -> Imag
     big = [s(168), s(210), s(742), s(660)]
     draw.rounded_rectangle(big, radius=s(150), fill=WHITE)
     draw.polygon(
-        [(s(250), s(600)), (s(250), s(748)), (s(392), s(648))],
+        [(s(215), s(600)), (s(215), s(742)), (s(365), s(645))],
         fill=WHITE,
     )
+    # 大气泡的两只眼睛（绿色圆点）
+    for eye_x in (330, 500):
+        draw.ellipse(
+            [s(eye_x - 32), s(360 - 32), s(eye_x + 32), s(360 + 32)],
+            fill=GREEN,
+        )
 
     # 小气泡：先描一圈绿色，和大气泡区分开
     small = [s(512), s(470), s(936), s(800)]
@@ -55,6 +61,12 @@ def draw_master(size: int, background: bool, content_scale: float = 1.0) -> Imag
         [(s(772), s(742)), (s(772), s(862)), (s(662), s(772))],
         fill=WHITE,
     )
+    # 小气泡的两只眼睛
+    for eye_x in (672, 812):
+        draw.ellipse(
+            [s(eye_x - 26), s(600 - 26), s(eye_x + 26), s(600 + 26)],
+            fill=GREEN,
+        )
 
     img = img.resize((size, size), Image.LANCZOS)
     return img
@@ -150,6 +162,11 @@ def main() -> None:
         if not target_dir.exists():
             continue
         make_splash(width, height).save(target_dir / "splash.png")
+
+    # 供网页里的「关于微信」页复用同一枚图标
+    public = ROOT / "public"
+    public.mkdir(exist_ok=True)
+    draw_master(512, background=True).save(public / "app-icon.png")
 
     print(f"图标和启动图已生成：{RES}")
 
