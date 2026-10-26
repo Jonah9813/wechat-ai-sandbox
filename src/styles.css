@@ -811,9 +811,9 @@ img {
 .contact-index {
   position: absolute;
   z-index: 6;
-  top: 24%;
+  top: 21%;
   right: 2px;
-  bottom: 20%;
+  bottom: 8%;
   width: 17px;
   display: flex;
   flex-direction: column;
