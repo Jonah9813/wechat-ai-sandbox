@@ -177,6 +177,7 @@ type Probe = {
   last: string
   dialogs: string
   body?: string
+  busy?: boolean
   error?: string
 }
 
@@ -213,15 +214,33 @@ async function probe(): Promise<Probe> {
       var input = findInput();
       var blocks = document.querySelectorAll('.ds-markdown');
       var last = blocks.length ? ((blocks[blocks.length - 1].innerText || '').trim()) : '';
-      var zones = document.querySelectorAll('[role="dialog"],[class*="modal"],[class*="dialog"],[class*="verify"]');
+      var zones = Array.prototype.slice.call(
+        document.querySelectorAll('[role="dialog"],[class*="modal"],[class*="dialog"],[class*="verify"]')
+      ).filter(function (el) {
+        var rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
       var dialogs = Array.prototype.slice.call(zones).map(function (el) { return el.innerText || ''; }).join('\\n').slice(0, 600);
+      var bodyText = document.body ? document.body.innerText : '';
+      // 生成期间 DeepSeek 会把发送按钮换成“停止生成”。这是判断还在不在写的可靠信号，
+      // 不能只看“深度思考”四个字——输入框旁边一直挂着这个开关。
+      var stop = Array.prototype.slice.call(document.querySelectorAll('button,[role="button"]')).some(function (el) {
+        var label = (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '');
+        if (!/stop|停止/i.test(label)) return false;
+        var rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+      // 只认按钮上的“停止”和独占一行的“思考中”，不认正文里的普通句子，
+      // 否则好友说一句“我在思考中”就会一直等
+      var busy = stop || /停止生成/.test(bodyText) || /^(?:DeepSeek\\s*)?(?:正在)?(?:思考|生成)中[.…]*$/m.test(bodyText);
       return JSON.stringify({
         url: location.href,
         hasInput: !!input,
         count: blocks.length,
         last: last,
         dialogs: dialogs,
-        body: (document.body ? document.body.innerText : '').slice(0, 400)
+        body: bodyText.slice(0, 1200),
+        busy: busy
       });
     } catch (error) {
       return JSON.stringify({ url: location.href, hasInput: false, count: 0, last: '', dialogs: '', error: String(error) });
@@ -235,8 +254,14 @@ function challengeOf(page: Probe): string | null {
   return hit ? hit[0] : null
 }
 
+/** 同域名下的登录弹窗：输入框还在，但其实发不出去。之前的“等半天没回复”很可能就是这个。 */
+function loginWallOf(page: Probe): boolean {
+  if (!page.dialogs) return false
+  return /手机号登录|扫码登录|验证码登录|登录后继续|请先登录|登录\s*DeepSeek/i.test(page.dialogs)
+}
+
 /** SPA 页面 onPageFinished 之后还要等 React 把输入框渲染出来。 */
-async function waitForPageReady(timeoutMs = 15_000): Promise<Probe> {
+async function waitForPageReady(timeoutMs = 25_000): Promise<Probe> {
   const started = Date.now()
   let page = await probe()
   while (Date.now() - started < timeoutMs) {
@@ -357,14 +382,20 @@ async function submit(): Promise<boolean> {
   return !(await inputValue())
 }
 
-async function waitForReply(before: { count: number; last: string }, timeoutMs = 90_000): Promise<string> {
+async function waitForReply(before: { count: number; last: string }, timeoutMs = 120_000): Promise<string> {
   const started = Date.now()
+  // 页面若仍在生成（深度思考 / 长回复），每轮把期限往后顺延，最多等 4 分钟。
+  // 以前固定 90 秒，深度思考经常没写完就回退本地模型，看起来像“半天不回”。
+  const hardLimit = started + 240_000
+  let deadline = started + timeoutMs
   let sawNew = false
   let last = ''
   let stableSince = 0
-  while (Date.now() - started < timeoutMs) {
+  let lastPage: Probe | null = null
+  while (Date.now() < deadline && Date.now() < hardLimit) {
     await wait(600)
     const page = await probe()
+    lastPage = page
     if (/sign_?in|\/login/i.test(page.url)) {
       throw new Error('DeepSeek 网页端未登录：点「登录 DeepSeek」重新登录后再试')
     }
@@ -372,9 +403,13 @@ async function waitForReply(before: { count: number; last: string }, timeoutMs =
     if (challenge) {
       throw new Error(`网页端出现「${challenge}」，已停止发送。请在登录窗口里手动处理后再试`)
     }
+    if (loginWallOf(page)) {
+      throw new Error('DeepSeek 网页端登录状态失效：点「登录 DeepSeek」重新登录后再试')
+    }
     const failure = /服务器繁忙|网络异常|网络错误|发送失败|请稍后再试|请求过于频繁|内容过长|对话不存在/.exec(`${page.body || ''}
 ${page.dialogs || ''}`)
     if (failure) throw new Error(`网页端提示「${failure[0]}」，请稍后再试`)
+    if (page.busy) deadline = Math.max(deadline, Math.min(hardLimit, Date.now() + 30_000))
     if (!sawNew) {
       if (page.count > before.count || (page.last && page.last !== before.last)) {
         sawNew = true
@@ -385,14 +420,20 @@ ${page.dialogs || ''}`)
     if (!page.last) continue
     if (page.last === last) {
       if (!stableSince) stableSince = Date.now()
-      if (Date.now() - stableSince > 2400) return page.last
+      // 生成中文字可能停顿好几秒，别把半句话当最终回复
+      const need = page.busy ? 12_000 : 2400
+      if (Date.now() - stableSince > need) return page.last
     } else {
       last = page.last
       stableSince = 0
     }
   }
+  // 等到上限时，有内容就先给用户，别为了“完整”直接回退成本地模型
   if (last) return last
-  throw new Error('网页端没有返回内容，可能是网络慢或页面结构已变化')
+  const seconds = Math.round((Date.now() - started) / 1000)
+  const where = lastPage?.busy ? '页面仍在生成（可能开了深度思考）' : '页面已空闲'
+  const url = lastPage?.url ? `，地址 ${lastPage.url.replace(/^https:\/\/chat\.deepseek\.com/, '')}` : ''
+  throw new Error(`网页端 ${seconds} 秒没有取到回复（回复块 ${lastPage?.count ?? 0} 个，${where}${url}）`)
 }
 
 export type WebAskParams = {
@@ -454,6 +495,9 @@ export async function askNativeWeb({ text, system, threadKey = 'default' }: WebA
         if (challenge) {
           throw new Error(`网页端出现「${challenge}」，已停止发送。请在登录窗口里手动完成验证，然后再试`)
         }
+        if (loginWallOf(page)) {
+          throw new Error('DeepSeek 网页端登录状态失效：点「登录 DeepSeek」重新登录后再试')
+        }
 
         let firstMessage = false
         if (!known) {
@@ -505,7 +549,7 @@ export async function askNativeWeb({ text, system, threadKey = 'default' }: WebA
       } catch (error) {
         const message = error instanceof Error ? error.message : ''
         // 只有「还没发出去」才换新会话重试；已经发出去但等回复超时不重试，避免重复发送
-        const retryable = Boolean(known) && !sent && !/未登录|验证|暂停|太多|过于频繁/.test(message)
+        const retryable = Boolean(known) && !sent && !/未登录|登录状态|验证|暂停|太多|过于频繁/.test(message)
         if (retryable) {
           delete threads[threadKey]
           writeThreads(threads)
