@@ -49,9 +49,6 @@ for (const name of ['DeepSeekWebPlugin.java', 'AppUpdaterPlugin.java', 'MainActi
   fs.copyFileSync(path.join(srcDir, name), path.join(javaDir, name))
   console.log(`已写入 ${path.relative(root, path.join(javaDir, name))}`)
 }
-fs.mkdirSync(path.join(resDir, 'xml'), { recursive: true })
-fs.copyFileSync(path.join(srcDir, 'updater_paths.xml'), path.join(resDir, 'xml', 'updater_paths.xml'))
-console.log('已写入 android/app/src/main/res/xml/updater_paths.xml')
 
 // 2. AndroidManifest
 const manifestFile = path.join(main, 'AndroidManifest.xml')
@@ -65,21 +62,17 @@ if (!manifest.includes('REQUEST_INSTALL_PACKAGES')) {
   console.log('已加 REQUEST_INSTALL_PACKAGES 权限')
 }
 
-if (!manifest.includes('.updater')) {
-  const provider = `
-        <!-- 自动更新：把下载到 cache/updates 的 APK 交给系统安装器 -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="\${applicationId}.updater"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/updater_paths" />
-        </provider>
-`
-  manifest = manifest.replace(/(\s*)<\/application>/, `${provider}$1</application>`)
-  console.log('已加 FileProvider')
+// 自动更新复用 Capacitor 自带的 FileProvider（${applicationId}.fileprovider）。
+// 不能另建第二个 androidx.core.content.FileProvider：两个 authority 共用同一个
+// provider 实例时，系统安装器会报 "authority ... does not match" 而安装失败。
+const pathsFile = path.join(resDir, 'xml', 'file_paths.xml')
+if (fs.existsSync(pathsFile)) {
+  let paths = read(pathsFile)
+  if (!paths.includes('cache/updates') && !paths.includes('path="updates/"')) {
+    paths = paths.replace(/(\s*)<\/paths>/, '$1    <cache-path name="updates" path="updates/" />\n</paths>')
+    write(pathsFile, paths)
+    console.log('已让 FileProvider 暴露 cache/updates')
+  }
 }
 
 manifest = manifest.replace(/<activity[\s\S]*?android:name="\.MainActivity"[\s\S]*?>/, (tag) => {
