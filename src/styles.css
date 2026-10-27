@@ -1321,6 +1321,46 @@ img {
   line-height: 1.6;
 }
 
+/* ---------------- profile edit ---------------- */
+
+.profile-avatar-btn {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.profile-avatar-change {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--wx-tertiary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.profile-field-input {
+  flex: 0 1 62%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--wx-text);
+  font-size: 13px;
+  text-align: right;
+  outline: none;
+}
+
+.profile-field-input::placeholder {
+  color: var(--wx-tertiary);
+}
+
+.profile-file-input {
+  display: none;
+}
+
 /* ---------------- chat page ---------------- */
 
 .chat-page,

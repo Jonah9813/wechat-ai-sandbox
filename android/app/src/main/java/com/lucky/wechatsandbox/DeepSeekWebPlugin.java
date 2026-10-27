@@ -8,6 +8,8 @@ import android.graphics.drawable.ColorDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
@@ -122,6 +124,8 @@ public class DeepSeekWebPlugin extends Plugin {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         );
+        // 程序自己会 focus 输入框，关掉软键盘，避免一点就弹输入法
+        webView.getSettings().setShowSoftInputOnFocus(false);
         root.addView(webView, 0, params);
     }
 
@@ -202,6 +206,56 @@ public class DeepSeekWebPlugin extends Plugin {
         });
     }
 
+    /**
+     * 注入的 KeyboardEvent 是 isTrusted:false，站点可以直接忽略。
+     * 这里走 View 层的按键分发，页面拿到的是真实回车。
+     */
+    @PluginMethod
+    public void pressEnter(PluginCall call) {
+        runOnUi(() -> {
+            if (webView == null) {
+                call.reject("内置浏览器还没打开");
+                return;
+            }
+            webView.requestFocus();
+            long now = android.os.SystemClock.uptimeMillis();
+            KeyEvent down = new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0);
+            KeyEvent up = new KeyEvent(now, now + 40, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0);
+            boolean handled = webView.dispatchKeyEvent(down);
+            webView.dispatchKeyEvent(up);
+            JSObject ret = new JSObject();
+            ret.put("handled", handled);
+            call.resolve(ret);
+        });
+    }
+
+    /** 同上：用 MotionEvent 点页面坐标，站点无法区分于手指。坐标是页面 CSS px。 */
+    @PluginMethod
+    public void tapAt(PluginCall call) {
+        double cssX = call.getDouble("x", 0d);
+        double cssY = call.getDouble("y", 0d);
+        runOnUi(() -> {
+            if (webView == null) {
+                call.reject("内置浏览器还没打开");
+                return;
+            }
+            float density = context().getResources().getDisplayMetrics().density;
+            float px = (float) (cssX * density);
+            float py = (float) (cssY * density);
+            long now = android.os.SystemClock.uptimeMillis();
+            MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, px, py, 0);
+            MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP, px, py, 0);
+            webView.dispatchTouchEvent(down);
+            webView.dispatchTouchEvent(up);
+            down.recycle();
+            up.recycle();
+            JSObject ret = new JSObject();
+            ret.put("x", px);
+            ret.put("y", py);
+            call.resolve(ret);
+        });
+    }
+
     @PluginMethod
     public void currentUrl(PluginCall call) {
         runOnUi(() -> {
@@ -211,7 +265,6 @@ public class DeepSeekWebPlugin extends Plugin {
             call.resolve(ret);
         });
     }
-
     @PluginMethod
     public void reload(PluginCall call) {
         runOnUi(() -> {

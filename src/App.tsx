@@ -18,6 +18,7 @@ import { MomentsScreen } from './screens/MomentsScreen'
 import { MyQRCodeScreen } from './screens/MyQRCodeScreen'
 import { NewFriendsScreen } from './screens/NewFriendsScreen'
 import { PayScreen } from './screens/PayScreen'
+import { ProfileEditScreen } from './screens/ProfileEditScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { ScanScreen } from './screens/ScanScreen'
 import { SearchScreen } from './screens/SearchScreen'
@@ -70,6 +71,7 @@ export default function App() {
               <Route path="/contacts" element={<ContactsScreen />} />
               <Route path="/discover" element={<DiscoverScreen />} />
               <Route path="/me" element={<MeScreen />} />
+              <Route path="/me/profile" element={<ProfileEditScreen />} />
               <Route path="/moments" element={<MomentsScreen />} />
               <Route path="/moments/compose" element={<ComposeMomentScreen />} />
               <Route path="/add-friend" element={<AddFriendScreen />} />

@@ -24,20 +24,25 @@ export function MeScreen() {
   return (
     <div className="page page--tab me-page">
       <div className="scroll me-scroll">
-        <section className="me-profile">
+        <section
+          className="me-profile"
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate('/me/profile')}
+        >
           <div className="me-profile-main">
             <Avatar src={me.avatar} name={me.name} size={64} radius={8} />
             <div className="me-profile-info">
               <div className="me-name">{me.name}</div>
-              <button type="button" className="me-id-row" onClick={() => showToast('个人资料为演示项')}>
+              <button type="button" className="me-id-row">
                 <span>微信号：{me.wechatId}</span>
                 <ChevronRight size={16} strokeWidth={1.5} />
               </button>
               <div className="me-pills">
-                <button type="button" className="me-pill" onClick={() => showToast('状态功能暂未接入')}>
+                <button type="button" className="me-pill" onClick={(event) => { event.stopPropagation(); showToast('状态功能暂未接入') }}>
                   ＋ 状态
                 </button>
-                <button type="button" className="me-pill me-pill--friends" onClick={() => navigate('/contacts')}>
+                <button type="button" className="me-pill me-pill--friends" onClick={(event) => { event.stopPropagation(); navigate('/contacts') }}>
                   <span className="me-pill-avatar">
                     {miniAvatar ? <img src={miniAvatar} alt="" /> : null}
                   </span>
@@ -47,7 +52,7 @@ export function MeScreen() {
               </div>
             </div>
           </div>
-          <button type="button" className="me-qr" aria-label="我的二维码" onClick={() => navigate('/my-qr')}>
+          <button type="button" className="me-qr" aria-label="我的二维码" onClick={(event) => { event.stopPropagation(); navigate('/my-qr') }}>
             <QrCode size={22} strokeWidth={1.7} />
           </button>
         </section>

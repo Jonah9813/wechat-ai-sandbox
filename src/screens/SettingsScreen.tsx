@@ -23,6 +23,7 @@ import { useApp } from '../store'
 export function SettingsScreen() {
   const navigate = useNavigate()
   const settings = useApp((state) => state.settings)
+  const me = useApp((state) => state.me)
   const todayEvent = useApp((state) => state.todayEvent)
   const updateSettings = useApp((state) => state.updateSettings)
   const resetDemo = useApp((state) => state.resetDemo)
@@ -38,6 +39,12 @@ export function SettingsScreen() {
       <NavBar back title="设置" />
       <div className="scroll settings-scroll">
         <CellGroup>
+          <Cell
+            icon={<IconTile background="linear-gradient(135deg, #ffd15c, #ff9d1a)"><UserRound size={16} strokeWidth={2} /></IconTile>}
+            title="个人信息"
+            subtitle={`名字、头像、地区 · 当前：${me.name}`}
+            onClick={() => navigate('/me/profile')}
+          />
           <Cell
             icon={<IconTile background="linear-gradient(135deg, #7bd88f, #07a83f)"><Sparkles size={16} strokeWidth={2} /></IconTile>}
             title="AI 连接"

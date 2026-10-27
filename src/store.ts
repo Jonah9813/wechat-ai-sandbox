@@ -34,6 +34,7 @@ type AppState = SeedData & {
   addComment: (momentId: string, content: string) => void
   updateAI: (patch: Partial<AISettings>) => void
   updateSettings: (patch: Partial<SeedData['settings']>) => void
+  updateMe: (patch: Partial<SeedData['me']>) => void
   setTodayEvent: (text: string) => void
   deliverFriendMessages: (friendId: string, bubbles: string[], typingLead?: number) => void
   triggerProactive: (friendId?: string) => Promise<void>
@@ -414,6 +415,10 @@ export const useApp = create<AppState>()(
 
       updateSettings: (patch) => {
         set((state) => ({ settings: { ...state.settings, ...patch } }))
+      },
+
+      updateMe: (patch) => {
+        set((state) => ({ me: { ...state.me, ...patch } }))
       },
 
       setTodayEvent: (text) => set({ todayEvent: text }),

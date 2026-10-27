@@ -52,6 +52,7 @@ export function ChatScreen() {
   const navigate = useNavigate()
   const friend = useApp((state) => state.friends.find((item) => item.id === id))
   const allMessages = useApp((state) => state.messages)
+  const me = useApp((state) => state.me)
   const conversation = useApp((state) => state.conversations[id])
   const setActiveChat = useApp((state) => state.setActiveChat)
   const markRead = useApp((state) => state.markRead)
@@ -182,8 +183,8 @@ export function ChatScreen() {
               ) : (
                 <div className={`message-row ${message.from === 'me' ? 'message-row--me' : ''}`}>
                   <Avatar
-                    src={message.from === 'me' ? '/avatars/me.avif' : friend.avatar}
-                    name={message.from === 'me' ? '我' : friend.name}
+                    src={message.from === 'me' ? me.avatar : friend.avatar}
+                    name={message.from === 'me' ? me.name : friend.name}
                     size={36}
                     radius={5}
                     onClick={() => {

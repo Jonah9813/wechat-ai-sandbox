@@ -17,6 +17,8 @@ type DeepSeekWebPlugin = {
   status(): Promise<StatusResult>
   loadUrl(options: { url: string }): Promise<LoadResult>
   evalPage(options: { script: string }): Promise<EvalResult>
+  pressEnter(): Promise<{ handled: boolean }>
+  tapAt(options: { x: number; y: number }): Promise<{ x: number; y: number }>
   currentUrl(): Promise<{ url: string }>
   openLogin(): Promise<{ loggedIn: boolean }>
   reload(): Promise<void>
@@ -279,10 +281,17 @@ async function typeText(text: string) {
       ${FIND_INPUT_JS}
       var el = findInput();
       if (!el) return JSON.stringify({ ok: false, error: 'no-input' });
-      if (el.tagName === 'TEXTAREA') {
-        var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-        setter.call(el, ${JSON.stringify(text)});
-        el.dispatchEvent(new Event('input', { bubbles: true }));
+      var wanted = ${JSON.stringify(text)};
+      try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+        // React 用 value tracker 缓存旧值，必须走原生 setter 才会触发 onChange
+        var proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+        var setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+        setter.call(el, '');
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward', data: '' }));
+        setter.call(el, wanted);
+        el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: wanted }));
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: wanted }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return JSON.stringify({ ok: true, value: el.value || '' });
       }
@@ -292,7 +301,13 @@ async function typeText(text: string) {
       range.selectNodeContents(el);
       selection.removeAllRanges();
       selection.addRange(range);
-      document.execCommand('insertText', false, ${JSON.stringify(text)});
+      var inserted = false;
+      try { inserted = document.execCommand('insertText', false, wanted); } catch (e) { inserted = false; }
+      if (!inserted || (el.innerText || '').trim().length < wanted.length * 0.5) {
+        el.textContent = wanted;
+        el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText', data: wanted }));
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: wanted }));
+      }
       return JSON.stringify({ ok: true, value: el.innerText || '' });
     } catch (error) {
       return JSON.stringify({ ok: false, error: String(error) });
@@ -301,7 +316,99 @@ async function typeText(text: string) {
   if (!result.ok) throw new Error('找不到网页端输入框（页面结构可能已变化）')
 }
 
-async function pressEnter() {
+/**
+ * 发送按钮查找：先按标记（aria-label / title / class 里带 send|发送），
+ * 再退回"和输入框同一水平线、最靠右"的那个可点元素。
+ */
+const FIND_SEND_JS = `
+  function findSendButton() {
+    var el = findInput();
+    if (!el) return null;
+    var scope = el.closest('form');
+    if (!scope) {
+      var node = el;
+      for (var i = 0; i < 5 && node.parentElement; i++) node = node.parentElement;
+      scope = node;
+    }
+    var all = Array.prototype.slice.call(
+      scope.querySelectorAll('button,[role="button"],[class*="send"],[class*="submit"]')
+    ).filter(function (b) {
+      var r = b.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    });
+    var labelled = all.filter(function (b) {
+      var label = (b.getAttribute('aria-label') || '') + ' ' +
+        (b.getAttribute('title') || '') + ' ' + (typeof b.className === 'string' ? b.className : '');
+      return /send|发送/i.test(label);
+    });
+    if (labelled.length) return labelled[0];
+    var box = el.getBoundingClientRect();
+    var best = null;
+    var bestScore = 1e9;
+    all.forEach(function (b) {
+      var rect = b.getBoundingClientRect();
+      var vertical = Math.abs((rect.top + rect.height / 2) - (box.top + box.height / 2));
+      if (vertical > 120) return;
+      var score = vertical + Math.abs(rect.right - box.right);
+      if (score < bestScore) { bestScore = score; best = b; }
+    });
+    return best;
+  }
+`
+
+async function focusInput() {
+  await evalJson<{ ok: boolean }>(`(function(){
+    ${FIND_INPUT_JS}
+    var el = findInput();
+    if (!el) return JSON.stringify({ ok: false });
+    try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+    return JSON.stringify({ ok: true });
+  })()`)
+}
+
+type SendButtonInfo = {
+  found: boolean
+  x: number
+  y: number
+  disabled: boolean
+  label: string
+  inputTag: string
+}
+
+async function sendButtonInfo(): Promise<SendButtonInfo> {
+  return evalJson<SendButtonInfo>(`(function(){
+    try {
+      ${FIND_INPUT_JS}
+      ${FIND_SEND_JS}
+      var input = findInput();
+      var b = findSendButton();
+      if (!b) return JSON.stringify({ found: false, x: 0, y: 0, disabled: false, label: '', inputTag: input ? input.tagName : '' });
+      var r = b.getBoundingClientRect();
+      var cls = typeof b.className === 'string' ? b.className : '';
+      var disabled = !!b.disabled || b.getAttribute('aria-disabled') === 'true' || /disabled/i.test(cls);
+      var label = (b.getAttribute('aria-label') || b.getAttribute('title') || cls).slice(0, 40);
+      return JSON.stringify({
+        found: true,
+        x: r.left + r.width / 2,
+        y: r.top + r.height / 2,
+        disabled: disabled,
+        label: label,
+        inputTag: input ? input.tagName : ''
+      });
+    } catch (error) {
+      return JSON.stringify({ found: false, x: 0, y: 0, disabled: false, label: String(error).slice(0, 40), inputTag: '' });
+    }
+  })()`)
+}
+
+/** 原生可信回车（View 层 KeyEvent）。老版本 APK 没有这个方法时退回合成事件。 */
+async function nativeEnter() {
+  try {
+    await DeepSeekWeb.pressEnter()
+    return
+  } catch {
+    // 继续走合成事件
+  }
   await evalJson<{ ok: boolean }>(`(function(){
     ${FIND_INPUT_JS}
     var el = findInput();
@@ -315,44 +422,30 @@ async function pressEnter() {
   })()`)
 }
 
-/** 回车没发出去时，退而求其次找发送按钮点一下。优先找带发送标记的，再找离输入框最近的按钮。 */
-async function clickSendButton() {
+/** 最后一道保险：给按钮补一整套 pointer/mouse 事件（很多 React 组件只监听 pointerdown）。 */
+async function domClickSend() {
   return evalJson<{ ok: boolean }>(`(function(){
     try {
       ${FIND_INPUT_JS}
-      var el = findInput();
-      if (!el) return JSON.stringify({ ok: false });
-      var scope = el.closest('form');
-      if (!scope) {
-        var node = el;
-        for (var i = 0; i < 5 && node.parentElement; i++) node = node.parentElement;
-        scope = node;
-      }
-      var all = Array.prototype.slice.call(scope.querySelectorAll('button,[role="button"]')).filter(function (button) {
-        return !button.disabled;
-      });
-      var labelled = all.filter(function (button) {
-        var label = (button.getAttribute('aria-label') || '') + ' ' +
-          (button.getAttribute('title') || '') + ' ' + (button.className || '');
-        return /send|发送/i.test(label);
-      });
-      var target = labelled[0];
-      if (!target) {
-        var box = el.getBoundingClientRect();
-        var best = null;
-        var bestScore = 1e9;
-        all.forEach(function (button) {
-          var rect = button.getBoundingClientRect();
-          if (!rect.width || !rect.height) return;
-          var vertical = Math.abs((rect.top + rect.height / 2) - (box.top + box.height / 2));
-          if (vertical > 120) return;
-          var score = vertical + Math.abs(rect.right - box.right);
-          if (score < bestScore) { bestScore = score; best = button; }
+      ${FIND_SEND_JS}
+      var b = findSendButton();
+      if (!b) return JSON.stringify({ ok: false });
+      var r = b.getBoundingClientRect();
+      var x = r.left + r.width / 2, y = r.top + r.height / 2;
+      var PointerCtor = window.PointerEvent || window.MouseEvent;
+      [['pointerdown', window.PointerEvent ? PointerCtor : window.MouseEvent],
+       ['mousedown', window.MouseEvent],
+       ['pointerup', window.PointerEvent ? PointerCtor : window.MouseEvent],
+       ['mouseup', window.MouseEvent],
+       ['click', window.MouseEvent]].forEach(function (pair) {
+        var type = pair[0], Ctor = pair[1];
+        var ev = new Ctor(type, {
+          bubbles: true, cancelable: true, view: window,
+          clientX: x, clientY: y, button: 0, buttons: type === 'mouseup' || type === 'click' ? 0 : 1
         });
-        target = best;
-      }
-      if (!target) return JSON.stringify({ ok: false });
-      target.click();
+        b.dispatchEvent(ev);
+      });
+      if (typeof b.click === 'function') b.click();
       return JSON.stringify({ ok: true });
     } catch (error) {
       return JSON.stringify({ ok: false });
@@ -371,15 +464,40 @@ async function inputValue(): Promise<string> {
   })()`)
 }
 
-async function submit(): Promise<boolean> {
-  await pressEnter()
+/** 输入框被清空 = 消息真的发出去了。 */
+async function cleared(): Promise<boolean> {
   for (let i = 0; i < 6; i++) {
     await wait(250)
     if (!(await inputValue())) return true
   }
-  await clickSendButton()
-  await wait(900)
-  return !(await inputValue())
+  return false
+}
+
+async function submit(): Promise<{ sent: boolean; diag: string }> {
+  await focusInput().catch(() => undefined)
+  await nativeEnter()
+  if (await cleared()) return { sent: true, diag: '' }
+
+  const button = await sendButtonInfo().catch(() => null)
+  if (button && button.found && !button.disabled) {
+    // 可信点击：站点区分不了我们和手指
+    await DeepSeekWeb.tapAt({ x: button.x, y: button.y }).catch(() => undefined)
+    if (await cleared()) return { sent: true, diag: '' }
+    await domClickSend().catch(() => undefined)
+    if (await cleared()) return { sent: true, diag: '' }
+  }
+
+  await focusInput().catch(() => undefined)
+  await nativeEnter()
+  if (await cleared()) return { sent: true, diag: '' }
+
+  const inputTag = button?.inputTag || '未知'
+  const btnText = !button
+    ? '读取发送按钮失败'
+    : button.found
+      ? `发送按钮「${button.label || '无标记'}」${button.disabled ? '处于禁用状态（说明文字没进 React 状态）' : '点了没反应'}`
+      : '页面上没找到发送按钮'
+  return { sent: false, diag: `输入框 ${inputTag}，${btnText}` }
 }
 
 async function waitForReply(before: { count: number; last: string }, timeoutMs = 120_000): Promise<string> {
@@ -520,14 +638,15 @@ export async function askNativeWeb({ text, system, threadKey = 'default' }: WebA
         const before = { count: page.count, last: page.last }
         await typeText(prompt)
         await wait(randomBetween(500, 1200))
-        sent = await submit()
+        const submitted = await submit()
+        sent = submitted.sent
         if (!sent) {
           if (known) {
             delete threads[threadKey]
             writeThreads(threads)
             continue
           }
-          throw new Error('网页端没有把消息发出去，请稍后再试')
+          throw new Error(`网页端没有把消息发出去（${submitted.diag}）`)
         }
 
         const reply = await waitForReply(before)
