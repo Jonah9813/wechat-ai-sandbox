@@ -124,8 +124,15 @@ public class DeepSeekWebPlugin extends Plugin {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         );
-        // 程序自己会 focus 输入框，关掉软键盘，避免一点就弹输入法
-        webView.getSettings().setShowSoftInputOnFocus(false);
+        // 程序自己会 focus 输入框，关掉软键盘，避免一点就弹输入法。
+        // setShowSoftInputOnFocus 是 @hide API，公开 SDK 编译不过，只能反射调用。
+        try {
+            webView.getSettings().getClass()
+                    .getMethod("setShowSoftInputOnFocus", boolean.class)
+                    .invoke(webView.getSettings(), false);
+        } catch (Exception ignored) {
+            // 反射不到就不关，最多是聚焦时弹一次输入法
+        }
         root.addView(webView, 0, params);
     }
 
